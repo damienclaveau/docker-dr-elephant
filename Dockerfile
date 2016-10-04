@@ -36,38 +36,61 @@ ENV PATH $PATH:/activator-dist-1.3.9/bin
 
 ENV ELEPHANT_CONF_DIR ${ELEPHANT_CONF_DIR:-/usr/dr-elephant/app-conf}
 
-#ARG HADOOP_VERSION
-ENV HADOOP_VERSION ${HADOOP_VERSION:-2.7.1}
-
 #ARG SPARK_VERSION
 ENV SPARK_VERSION ${SPARK_VERSION:-1.6.0}
 
+#ARG HADOOP_VERSION
+ENV HADOOP_VERSION ${HADOOP_VERSION:-2.7.1}
+
 #ARG HADOOP_HOME
-ENV HADOOP_HOME ${HADOOP_HOME:-/usr/hdp/current/hadoop-client}
+ENV HADOOP_HOME ${HADOOP_HOME:-/usr/hadoop}
 
 #ARG HADOOP_CONF_DIR
 ENV HADOOP_CONF_DIR ${HADOOP_CONF_DIR:-/etc/hadoop/conf}
 
-ENV PATH $HADOOP_HOME/bin:$PATH
+## SETUP HADOOP CLIENT ##
+
+RUN cd /tmp \
+ && wget http://apache.org/dist/hadoop/common/hadoop-$HADOOP_VERSION/hadoop-$HADOOP_VERSION.tar.gz \
+ && mkdir -p $HADOOP_CONF_DIR \
+ && mkdir -p $HADOOP_HOME \
+ && tar xzf hadoop-$HADOOP_VERSION.tar.gz \
+ && mv      hadoop-$HADOOP_VERSION/* $HADOOP_HOME \
+ && rm -Rf  hadoop-$HADOOP_VERSION \
+ && rm -Rf  hadoop-$HADOOP_VERSION.tar.gz
+
+# Set Hadoop-related environment variables
+ENV YARN_HOME ${HADOOP_HOME}
+ENV HADOOP_MAPRED_HOME ${HADOOP_HOME}
+ENV HADOOP_COMMON_HOME ${HADOOP_HOME}
+ENV HADOOP_HDFS_HOME ${HADOOP_HOME}
+ENV HADOOP_PREFIX ${HADOOP_HOME}
+ENV HADOOP_COMMON_LIB_NATIVE_DIR ${HADOOP_PREFIX}/lib/native
+ENV HADOOP_OPTS "-Djava.library.path=$HADOOP_COMMON_LIB_NATIVE_DIR"
+ENV PATH $HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
 
 ## BUILD AND INSTALL ##
 
-RUN git clone https://github.com/linkedin/dr-elephant.git /tmp/dr-elephant \
+ENV ELEPHANT_VERSION 2.0.5
+
+RUN git clone https://github.com/damienclaveau/dr-elephant.git /tmp/dr-elephant \
  && cd /tmp/dr-elephant \
+## && git checkout tags/$ELEPHANT_VERSION
+## && cp resolver.conf.template ./app-conf/resolver.conf \
  && echo "" >> ./build.sbt && echo "resolvers += \"scalaz-bintray\" at \"https://dl.bintray.com/scalaz/releases\"" >> ./build.sbt \
  && sed -i -e "s/clean\stest\scompile\sdist/clean compile dist/g"    ./compile.sh \
- && sed -i -e "s/hadoop_version=.*/hadoop_version=$HADOOP_VERSION/g" ./app-conf/compile.conf \
- && sed -i -e "s/spark_version=.*/spark_version=$SPARK_VERSION/g"    ./app-conf/compile.conf \
- && ./compile.sh ./app-conf/compile.conf \
- && unzip ./dist/dr-elephant-2.0.3-SNAPSHOT -d /usr \
- && cp -R ./app-conf /usr/dr-elephant-2.0.3-SNAPSHOT \
- && ln -s  /usr/dr-elephant-2.0.3-SNAPSHOT /usr/dr-elephant \
+ && sed -i -e "s/hadoop_version=.*/hadoop_version=$HADOOP_VERSION/g" ./compile.conf \
+ && sed -i -e "s/spark_version=.*/spark_version=$SPARK_VERSION/g"    ./compile.conf \
+ && ./compile.sh ./compile.conf \ 
+ && cd /tmp/dr-elephant \
+ && unzip ./dist/dr-elephant-$ELEPHANT_VERSION.zip -d /usr \
+ && ln -s  /usr/dr-elephant-$ELEPHANT_VERSION /usr/dr-elephant \
  && rm -Rf /tmp/dr-elephant
 
 ## CONFIGURE ##
 
-# Linked MySql container env vars are injected
-# Keytab configuration should be valued as env vars by docker run
+## Linked MySql container env vars are injected
+## Keytab configuration should be valued as env vars by docker run
 RUN cd /usr/dr-elephant \
  && sed -i -e "s/port=.*/port=\${http_port:-8080}/g"                              ./app-conf/elephant.conf \
  && sed -i -e "s/db_url=.*/db_url\=\${MYSQL_PORT_3306_TCP_ADDR:-localhost}/g"     ./app-conf/elephant.conf \
@@ -75,7 +98,8 @@ RUN cd /usr/dr-elephant \
  && sed -i -e "s/db_user=.*/db_user=\${MYSQL_ENV_MYSQL_USER:-root}/g"             ./app-conf/elephant.conf \
  && sed -i -e "s/db_password=.*/db_password=\${MYSQL_ENV_MYSQL_PASSWORD:-""}/g"   ./app-conf/elephant.conf \
  && sed -i -e "s/#\skeytab_user=.*/keytab_user=\${keytab_user:-""}/g"             ./app-conf/elephant.conf \
- && sed -i -e "s/#\skeytab_location=.*/keytab_location=\${keytab_location:-""}/g" ./app-conf/elephant.conf
+ && sed -i -e "s/#\skeytab_location=.*/keytab_location=\${keytab_location:-""}/g" ./app-conf/elephant.conf \
+ && sed -i -e 's@jvm_args=.*@jvm_args="-Devolutionplugin=enabled -DapplyEvolutions.default=true -Dlog4j.configuration=file:/usr/dr-elephant/conf/log4j.properties"@g' ./app-conf/elephant.conf
 
 ## RUN ##
 
@@ -93,9 +117,11 @@ CMD ["/usr/dr-elephant/bin/start.sh"]
 # docker run --name drelephant --link mysql-drelephant:mysql  -i -t \
 #    -e HADOOP_HOME='/usr/hdp/current/hadoop-client' \
 #    -e HADOOP_CONF_DIR='/etc/hadoop/conf' \
+#    -v /etc/hadoop/conf:/etc/hadoop/conf \
 #    -e http_port='8080' \
 #    -e keytab_user='' \
 #    -e keytab_location='' \
+#    -v /etc/krb5.conf:/etc/krb5.conf
 #    -e ELEPHANT_CONF_DIR='/etc/drelephant/conf' \
 #    -v /etc/drelephant/conf:/usr/dr-elephant/app-conf
 #    edf/dr-elephant /bin/bash
