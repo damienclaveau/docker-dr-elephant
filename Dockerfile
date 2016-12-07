@@ -32,6 +32,13 @@ RUN curl -O http://downloads.typesafe.com/typesafe-activator/1.3.9/typesafe-acti
  && chmod a+x /activator-dist-1.3.9/bin/activator
 ENV PATH $PATH:/activator-dist-1.3.9/bin
 
+# NodeJS v6
+RUN curl --silent --location https://rpm.nodesource.com/setup_6.x | bash - \
+ && yum install -y gcc-c++ make \
+ && yum install -y nodejs \
+ && yum clean all \
+ && echo '{ "allow_root": true }' > /root/.bowerrc
+
 ## CONFIGURE ##
 
 ENV ELEPHANT_CONF_DIR ${ELEPHANT_CONF_DIR:-/usr/dr-elephant/app-conf}
@@ -71,7 +78,7 @@ ENV PATH $HADOOP_HOME/bin:$HADOOP_HOME/sbin:$PATH
 
 ## BUILD AND INSTALL ##
 
-ENV ELEPHANT_VERSION 2.0.5
+ENV ELEPHANT_VERSION 2.0.6
 
 RUN git clone https://github.com/damienclaveau/dr-elephant.git /tmp/dr-elephant \
  && cd /tmp/dr-elephant \
@@ -99,31 +106,15 @@ RUN cd /usr/dr-elephant \
  && sed -i -e "s/db_password=.*/db_password=\${MYSQL_ENV_MYSQL_PASSWORD:-""}/g"   ./app-conf/elephant.conf \
  && sed -i -e "s/#\skeytab_user=.*/keytab_user=\${keytab_user:-""}/g"             ./app-conf/elephant.conf \
  && sed -i -e "s/#\skeytab_location=.*/keytab_location=\${keytab_location:-""}/g" ./app-conf/elephant.conf \
- && sed -i -e 's@jvm_args=.*@jvm_args="-Devolutionplugin=enabled -DapplyEvolutions.default=true -Dlog4j.configuration=file:/usr/dr-elephant/conf/log4j.properties"@g' ./app-conf/elephant.conf
+ && sed -i -e "s/#\skeytab_location=.*/keytab_location=\${keytab_location:-""}/g" ./app-conf/elephant.conf \
+ && sed -i -e 's@jvm_args=.*@jvm_args="-Devolutionplugin=enabled -DapplyEvolutions.default=true -Dlog4j.configuration=file:/usr/dr-elephant/conf/log4j.properties"@g' ./app-conf/elephant.conf \
+ && sed -i -e 's@nohup.*@./bin/dr-elephant ${OPTS} > $project_root/dr.log 2>\&1@g' ./bin/start.sh
 
 ## RUN ##
 
 EXPOSE 8080
 
-VOLUME $ELEPHANT_CONF_DIR $HADOOP_HOME $HADOOP_CONF_DIR
+VOLUME $ELEPHANT_CONF_DIR $HADOOP_CONF_DIR /usr/dr-elephant/logs
 
 CMD ["/usr/dr-elephant/bin/start.sh"]
-
-
-# How to run ?
-# docker pull mysql:latest
-# docker run --name mysql-drelephant -e MYSQL_ROOT_PASSWORD=drelephant -e MYSQL_DATABASE=drelephant -e MYSQL_USER=drelephant -e 
-# MYSQL_PASSWORD=drelephant -d mysql
-# docker run --name drelephant --link mysql-drelephant:mysql  -i -t \
-#    -e HADOOP_HOME='/usr/hdp/current/hadoop-client' \
-#    -e HADOOP_CONF_DIR='/etc/hadoop/conf' \
-#    -v /etc/hadoop/conf:/etc/hadoop/conf \
-#    -e http_port='8080' \
-#    -e keytab_user='' \
-#    -e keytab_location='' \
-#    -v /etc/krb5.conf:/etc/krb5.conf
-#    -e ELEPHANT_CONF_DIR='/etc/drelephant/conf' \
-#    -v /etc/drelephant/conf:/usr/dr-elephant/app-conf
-#    edf/dr-elephant /bin/bash
-
 
