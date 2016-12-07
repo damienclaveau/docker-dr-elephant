@@ -2,7 +2,7 @@
 LinkedIn dr-elephant tool in a ready to go container
 
 LinkedIn dr-elephant is a useful solution that gives recommandations 
-to the Data engineers that use Hadoop MapReduce and Spark.
+to the Data engineers who use Hadoop MapReduce and Spark.
 More info can be found here : https://github.com/linkedin/dr-elephant
 
 # How to run it ?
